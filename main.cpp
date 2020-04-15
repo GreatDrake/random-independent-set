@@ -1,14 +1,15 @@
 #include <iostream>
 #include <vector>
 #include <random>
-#include <unordered_set>
 #include <array>
 #include <cmath>
 #include <cassert>
+#include <algorithm>
+#include <queue>
 
 using namespace std;
 
-typedef unordered_set<int> EdgeIdSet;
+typedef vector<int> EdgeIdSet;
 
 template<int K>
 using Edge = array<int, K>;
@@ -33,7 +34,7 @@ public:
     {
         ++m;
         for (int v : e) {
-            neighbours[v].insert(edges.size());
+            neighbours[v].push_back(edges.size());
         }
         edges.push_back(e);
     }
@@ -42,7 +43,7 @@ public:
     {
         --m;
         for (int v : edges[edgeId]) {
-            neighbours[v].erase(edgeId);
+            neighbours[v].erase(find(neighbours[v].begin(), neighbours[v].end(), edgeId));
         }
     }
 
@@ -67,27 +68,13 @@ private:
     int m;
 };
 
-vector<vector<long long>> binom;
-
-void calculateBinomials(int n, int k) {
-    binom.resize(n + 1, vector<long long>(k + 1, 0));
-    binom[0][0] = 1;
-    for (int i = 1; i <= n; ++i) {
-        binom[i][1] = i;
-        binom[i][0] = 1;
-    }
-    for (int i = 1; i <= n; ++i) {
-        for (int j = 2; j <= k; ++j) {
-            binom[i][j] = binom[i - 1][j - 1] + binom[i - 1][j];
-        }
-    }
-}
-
 enum RandomMode
 {
     randomEdgeCount,
     fixedEdgeCount
 };
+
+vector<vector<unsigned long long>> binom;
 
 template<int K>
 Hypergraph<K> generate(int n, double c, RandomMode edgeMode)
@@ -132,82 +119,90 @@ Hypergraph<K> generate(int n, double c, RandomMode edgeMode)
 }
 
 template<int K>
-void dfs(int v, const Hypergraph<K> &g, vector<int> &dist)
+bool isLeaf(const Hypergraph<K> &g, const Edge<K> &edge)
 {
-    for (int edgeId : g.getNeighbourEdgesIds(v)) {
-        for (int u : g.getEdge(edgeId)) {
-            if (dist[u] == -1) {
-                dist[u] = dist[v] + 1;
-                dfs(u, g, dist);
-            }
+    int cnt = 0;
+    for (int v : edge) {
+        if (g.getNeighbourEdgesIds(v).size() == 1) {
+            ++cnt;
         }
     }
+    return cnt >= K - 1;
 }
 
 template<int K>
 vector<int> maxIndependentSet(Hypergraph<K> g)
 {
     int n = g.numberOfVertices();
-    vector<int> dist(n, -1);
-    vector<int> deleted(n, 0);
+    int m = g.numberOfEdges();
+    vector<char> deletedVert(n, 0);
+    vector<char> queuedEdges(m, 0);
     vector<int> result;
-    for (int i = 0; i < n; ++i) {
-        if (dist[i] == -1) {
-            dist[i] = 0;
-            dfs(i, g, dist);
+    queue<int> edgeQueue;
+    for (int id = 0; id < m; ++id) {
+        if (isLeaf<K>(g, g.getEdge(id))) {
+            queuedEdges[id] = 1;
+            edgeQueue.push(id);
         }
     }
-    vector<vector<int>> distVertices(n);
-    for (int i = 0; i < n; ++i) {
-        distVertices[dist[i]].push_back(i);
-    }
-
-    for (int d = n - 1; d >= 0; --d) {
-        while (!distVertices[d].empty()) {
-            int cur = distVertices[d].back();
-            distVertices[d].pop_back();
-            if (deleted[cur]) {
-                continue;
+    while (!edgeQueue.empty()) {
+        if (!queuedEdges[edgeQueue.front()]) {
+            edgeQueue.pop();
+            continue;
+        }
+        Edge<K> curEdge = g.getEdge(edgeQueue.front());
+        edgeQueue.pop();
+        int w = -1;
+        for (int v : curEdge) {
+            if (g.getNeighbourEdgesIds(v).size() > 1) {
+                w = v;
+                break;
             }
-            if (g.getNeighbourEdgesIds(cur).empty()) {
-                deleted[cur] = 1;
-                result.push_back(cur);
-            } else if (g.getNeighbourEdgesIds(cur).size() == 1) {
-                int w = -1;
-                bool fail = false;
-                Edge<K> cur_edge = g.getEdge(*g.getNeighbourEdgesIds(cur).begin());
-                for (int u : cur_edge) {
-                    if (g.getNeighbourEdgesIds(u).size() > 1) {
-                        if (w == -1) {
-                            w = u;
-                        } else {
-                            fail = true;
-                        }
+        }
+        if (w == -1) {
+            w = curEdge[0];
+        }
+        for (int v : curEdge) {
+            assert(!deletedVert[v]);
+            deletedVert[v] = 1;
+            if (v != w) {
+                result.push_back(v);
+            }
+        }
+        while (!g.getNeighbourEdgesIds(w).empty()) {
+            int curId = *g.getNeighbourEdgesIds(w).begin();
+            g.removeEdge(curId);
+            queuedEdges[curId] = 0;
+            for (int v : g.getEdge(curId)) {
+                for (int id : g.getNeighbourEdgesIds(v)) {
+                    if (!queuedEdges[id] && isLeaf<K>(g, g.getEdge(id))) {
+                        queuedEdges[id] = 1;
+                        edgeQueue.push(id);
                     }
                 }
-                if (fail) {
-                    continue;
-                }
-                if (w == -1) {
-                    w = cur_edge[0];
-                }
-                for (int u : cur_edge) {
-                    if (u != w) {
-                        deleted[u] = 1;
-                        result.push_back(u);
-                    }
-                }
-                deleted[w] = 1;
-                while (!g.getNeighbourEdgesIds(w).empty()) {
-                    g.removeEdge(*g.getNeighbourEdgesIds(w).begin());
-                }
-            } else {
-                continue;
             }
         }
     }
-
+    for (int v = 0; v < n; ++v) {
+        if (!deletedVert[v] && g.getNeighbourEdgesIds(v).empty()) {
+            result.push_back(v);
+        }
+    }
     return result;
+}
+
+void calculateBinomials(int n, int k) {
+    binom.resize(n + 1, vector<unsigned long long>(k + 1, 0));
+    binom[0][0] = 1;
+    for (int i = 1; i <= n; ++i) {
+        binom[i][1] = i;
+        binom[i][0] = 1;
+    }
+    for (int i = 1; i <= n; ++i) {
+        for (int j = 2; j <= k; ++j) {
+            binom[i][j] = binom[i - 1][j - 1] + binom[i - 1][j];
+        }
+    }
 }
 
 double f(double x, double c, int k)
@@ -235,11 +230,11 @@ int main()
     // size of edge
     constexpr int K = 3;
     // number of tries
-    constexpr int iters = 40;
+    constexpr int iters = 20;
     // number of vertices
-    constexpr int n = 10000;
+    constexpr int n = 200000;
     // probability of taking the edge into hypergraph will be equal to c / C(n - 1, k - 1)
-    constexpr double c = 0.5;
+    constexpr double c = 1.3;
 
     // if set to randomEdgeCount, generated graphs will have random amount of edges from binomial distribution
     // if set to fixedEdgeCount, generated graphs will have fixed amount of edges equal to the expected one
@@ -253,7 +248,7 @@ int main()
     for (int it = 0; it < iters; ++it) {
         auto g = generate<K>(n, c, edgeMode);
         edgeSum += g.numberOfEdges();
-        auto result = maxIndependentSet<K>(g);
+        auto result = maxIndependentSet<K>(std::move(g));
         setSizeSum += result.size();
 
         /*
@@ -287,3 +282,4 @@ int main()
 
     return 0;
 }
+
