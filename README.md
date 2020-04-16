@@ -1,2 +1,2 @@
 # random-independent-set
-finding independent sets in sparse random hypergraphs
+My university project on algorithmic barriers related to finding maximum independent sets in sparse random hypergraphs.
