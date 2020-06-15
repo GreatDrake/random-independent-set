@@ -6,6 +6,7 @@
 #include <cassert>
 #include <algorithm>
 #include <queue>
+#include <chrono>
 
 using namespace std;
 
@@ -102,7 +103,7 @@ Hypergraph<K> generate(int n, double c, RandomMode edgeMode)
             cur[j] = vertexDist(gen);
         }
         bool ok = true;
-        for (int i = 0; i < K; ++i) {
+        for (int i = 0; ok && i < K; ++i) {
             for (int j = i + 1; j < K; ++j) {
                 if (cur[i] == cur[j]) {
                     ok = false;
@@ -131,7 +132,7 @@ bool isLeaf(const Hypergraph<K> &g, const Edge<K> &edge)
 }
 
 template<int K>
-vector<int> maxIndependentSet(Hypergraph<K> g)
+pair<vector<int>, int> maxIndependentSet(Hypergraph<K> g)
 {
     int n = g.numberOfVertices();
     int m = g.numberOfEdges();
@@ -183,12 +184,15 @@ vector<int> maxIndependentSet(Hypergraph<K> g)
             }
         }
     }
+    int verticesLeft = 0;
     for (int v = 0; v < n; ++v) {
         if (!deletedVert[v] && g.getNeighbourEdgesIds(v).empty()) {
             result.push_back(v);
+        } else if (!deletedVert[v]) {
+            ++verticesLeft;
         }
     }
-    return result;
+    return {result, verticesLeft};
 }
 
 void calculateBinomials(int n, int k) {
@@ -240,8 +244,11 @@ int main()
     // if set to fixedEdgeCount, generated graphs will have fixed amount of edges equal to the expected one
     constexpr RandomMode edgeMode = fixedEdgeCount;
 
+    auto start = std::chrono::high_resolution_clock::now();
+
     long long setSizeSum = 0;
     long long edgeSum = 0;
+    long long leftVerticesSum = 0;
 
     calculateBinomials(n, K);
 
@@ -249,13 +256,14 @@ int main()
         auto g = generate<K>(n, c, edgeMode);
         edgeSum += g.numberOfEdges();
         auto result = maxIndependentSet<K>(std::move(g));
-        setSizeSum += result.size();
+        setSizeSum += result.first.size();
+        leftVerticesSum += result.second;
 
         /*
         * Independent set validation
         *
         vector<char> in(n + 1, 0);
-        for (int v : result) {
+        for (int v : result.first) {
             ++in[v];
             assert(in[v] <= 1);
         }
@@ -271,6 +279,7 @@ int main()
 
     cout << "Expected limit: " << expectedLimit(c, K) << endl;
     cout << "Actual average: " << (double)setSizeSum / iters / n << endl;
+    cout << "Average portion of vertices left after execution of algorithm: " << (double)leftVerticesSum / iters / n << endl;
     cout << "Parameters:" << endl;
     cout << "Number of tries: " << iters << endl;
     cout << "Number of vertices: " << n << endl;
@@ -280,6 +289,9 @@ int main()
     cout << "Expected number of edges: " << c * n / K << endl;
     cout << "Actual average number of edges: " << (double)edgeSum / iters << endl;
 
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    cout << endl << "Time taken: " << duration.count() / 1000.0 << " milliseconds" << endl;
+
     return 0;
 }
-
